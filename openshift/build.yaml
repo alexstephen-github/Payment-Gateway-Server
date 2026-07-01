@@ -1,0 +1,42 @@
+# ImageStream + BuildConfig so OpenShift builds the container image from the
+# Dockerfile using its own Docker/Buildah build strategy.
+#
+#   oc apply -f openshift/build.yaml
+#   oc start-build payment-gateway-mock --from-dir=. --follow
+#
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: payment-gateway-mock
+  labels:
+    app: payment-gateway-mock
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: payment-gateway-mock
+  labels:
+    app: payment-gateway-mock
+spec:
+  # Binary source: the build is fed from a local directory via `--from-dir`.
+  # To build straight from Git instead, replace `source` with:
+  #   source:
+  #     type: Git
+  #     git:
+  #       uri: https://github.com/<org>/<repo>.git
+  #       ref: main
+  source:
+    type: Binary
+    binary: {}
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: payment-gateway-mock:latest
+  resources:
+    limits:
+      cpu: "1"
+      memory: 1Gi

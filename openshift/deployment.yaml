@@ -1,0 +1,98 @@
+# Deployment + Service + Route for the Payment Gateway mock server.
+#
+#   oc apply -f openshift/deployment.yaml
+#   oc get route payment-gateway-mock -o jsonpath='{.spec.host}{"\n"}'
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-gateway-mock
+  labels:
+    app: payment-gateway-mock
+  annotations:
+    # Re-roll the Deployment automatically whenever the ImageStream tag built by
+    # build.yaml is updated. The empty "image" below is filled in by this trigger.
+    image.openshift.io/triggers: |
+      [{"from":{"kind":"ImageStreamTag","name":"payment-gateway-mock:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"payment-gateway-mock\")].image"}]
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payment-gateway-mock
+  template:
+    metadata:
+      labels:
+        app: payment-gateway-mock
+    spec:
+      containers:
+        - name: payment-gateway-mock
+          image: payment-gateway-mock:latest
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SERVER_PORT
+              value: "8080"
+            - name: JAVA_OPTS
+              value: "-XX:MaxRAMPercentage=75.0 -XX:+UseContainerSupport"
+          readinessProbe:
+            httpGet:
+              path: /v1/actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /v1/actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          # Satisfies OpenShift's default restricted-v2 SCC. The specific UID is
+          # assigned by the platform, so none is hard-coded here.
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-gateway-mock
+  labels:
+    app: payment-gateway-mock
+spec:
+  selector:
+    app: payment-gateway-mock
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: payment-gateway-mock
+  labels:
+    app: payment-gateway-mock
+spec:
+  to:
+    kind: Service
+    name: payment-gateway-mock
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

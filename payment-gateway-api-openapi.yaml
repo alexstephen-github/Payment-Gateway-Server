@@ -1,0 +1,4007 @@
+
+openapi: "3.1.0"
+info:
+  title: Payment Gateway API
+  version: "2.0.0"
+  description: "Enterprise-grade Payment Gateway REST API covering the full payment lifecycle:\npayment processing, refunds, customers, payment methods, subscriptions, invoicing,\npayouts, marketplace transfers, dispute management, tax,\n3DS authentication, and more.\n\n## Authentication\nAuthenticate using HTTP Basic Auth. Pass your secret API key as the username,\nleave password empty.  For client-side tokenization use the publishable key.\n\n```\nAuthorization: Basic base64(sk_live_xxx:)\n```\n\n## Idempotency\nSupply `Idempotency-Key: <uuid>` on any POST request to safely retry without\ncreating duplicate resources. Keys expire after 24 hours.\n\n## Amounts\nAll monetary amounts are integers in the **smallest currency unit** (e.g., cents for USD).\n\n## Versioning\nAPI version is prefixed in the URL path: `/v1/`.\n\n## Pagination\nList endpoints use cursor-based pagination via `starting_after` / `ending_before` params.\n"
+  contact:
+    name: Payment Gateway Support
+    email: "api-support@paygateway.example.com"
+    url: "https://docs.paygateway.example.com"
+  license:
+    name: Proprietary
+    url: "https://paygateway.example.com/terms"
+servers:
+  - url: "https://kong-0fbe56105binevqxs.kongcloud.dev"
+    description: Production
+security:
+  - BasicAuth: []
+  - BearerAuth: []
+tags:
+  - name: Payments
+    description: "Payment initiation, capture, void, and cancellation"
+  - name: Refunds
+    description: Full and partial refund operations
+  - name: Customers
+    description: Customer profile management
+  - name: Payment Methods
+    description: Card tokenization and saved payment methods
+  - name: Invoices
+    description: Invoice lifecycle management
+  - name: Balance
+    description: Account balance and transaction history
+paths:
+  /payments:
+    post:
+      tags:
+        - Payments
+      operationId: createPayment
+      summary: Create a payment
+      description: "Initiates a payment. Set `capture_method: automatic` for immediate charge\nor `capture_method: manual` for a two-step authorize-then-capture flow.\n"
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePaymentRequest"
+      responses:
+        201:
+          description: Payment created
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              description: URL of the newly created payment resource
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        400:
+          $ref: "#/components/responses/BadRequest"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        402:
+          $ref: "#/components/responses/PaymentRequired"
+        409:
+          $ref: "#/components/responses/Conflict"
+        422:
+          $ref: "#/components/responses/UnprocessableEntity"
+        429:
+          $ref: "#/components/responses/TooManyRequests"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+    get:
+      tags:
+        - Payments
+      operationId: listPayments
+      summary: List payments
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+        - $ref: "#/components/parameters/StatusFilter"
+        - $ref: "#/components/parameters/CreatedGte"
+        - $ref: "#/components/parameters/CreatedLte"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/StartingAfter"
+        - $ref: "#/components/parameters/EndingBefore"
+        - name: expand
+          in: query
+          schema:
+
+            type: array
+            items:
+              type: string
+          description: "Fields to expand (e.g., customer, payment_method)"
+      responses:
+        200:
+          description: Paginated list of payments
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentList"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /payments/{paymentId}:
+    get:
+      tags:
+        - Payments
+      operationId: getPayment
+      summary: Retrieve a payment
+      parameters:
+        - $ref: "#/components/parameters/PaymentId"
+      responses:
+        200:
+          description: Payment object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /payments/{paymentId}/capture:
+    post:
+      tags:
+        - Payments
+      operationId: capturePayment
+      summary: Capture an authorized payment
+      parameters:
+        - $ref: "#/components/parameters/PaymentId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CapturePaymentRequest"
+      responses:
+        200:
+          description: Payment captured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        400:
+          $ref: "#/components/responses/BadRequest"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /payments/{paymentId}/void:
+    post:
+      tags:
+        - Payments
+      operationId: voidPayment
+      summary: Void an authorized payment
+      parameters:
+        - $ref: "#/components/parameters/PaymentId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoidPaymentRequest"
+      responses:
+        200:
+          description: Authorization voided
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        400:
+          $ref: "#/components/responses/BadRequest"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /payments/{paymentId}/confirm:
+    post:
+      tags:
+        - Payments
+      operationId: confirmPayment
+      summary: Confirm a payment (after 3DS / redirect)
+      parameters:
+        - $ref: "#/components/parameters/PaymentId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmPaymentRequest"
+      responses:
+        200:
+          description: Payment confirmed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        400:
+          $ref: "#/components/responses/BadRequest"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /payments/{paymentId}/cancel:
+    post:
+      tags:
+        - Payments
+      operationId: cancelPayment
+      summary: Cancel a payment
+      parameters:
+        - $ref: "#/components/parameters/PaymentId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelPaymentRequest"
+      responses:
+        200:
+          description: Payment cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        400:
+          $ref: "#/components/responses/BadRequest"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /payments/{paymentId}/refunds:
+    post:
+      tags:
+        - Refunds
+      operationId: createRefund
+      summary: Create a refund for a payment
+      parameters:
+        - $ref: "#/components/parameters/PaymentId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRefundRequest"
+      responses:
+        201:
+          description: Refund created
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              description: URL of the newly created refund resource
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Refund"
+        400:
+          $ref: "#/components/responses/BadRequest"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        422:
+          $ref: "#/components/responses/UnprocessableEntity"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+    get:
+      tags:
+        - Refunds
+      operationId: listRefundsForPayment
+      summary: List refunds for a payment
+      parameters:
+        - $ref: "#/components/parameters/PaymentId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/StartingAfter"
+      responses:
+        200:
+          description: Paginated list of refunds
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefundList"
+  /refunds:
+    get:
+      tags:
+        - Refunds
+      operationId: listRefunds
+      summary: List all refunds
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+        - $ref: "#/components/parameters/StatusFilter"
+        - $ref: "#/components/parameters/CreatedGte"
+        - $ref: "#/components/parameters/CreatedLte"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/StartingAfter"
+      responses:
+        200:
+          description: Paginated list of refunds
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefundList"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /refunds/{refundId}:
+    get:
+      tags:
+        - Refunds
+      operationId: getRefund
+      summary: Retrieve a refund
+      parameters:
+        - $ref: "#/components/parameters/RefundId"
+      responses:
+        200:
+          description: Refund object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Refund"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /customers:
+    post:
+      tags:
+        - Customers
+      operationId: createCustomer
+      summary: Create a customer
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCustomerRequest"
+      responses:
+        201:
+          description: Customer created
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              description: URL of the newly created customer resource
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        400:
+          $ref: "#/components/responses/BadRequest"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        409:
+          $ref: "#/components/responses/Conflict"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+    get:
+      tags:
+        - Customers
+      operationId: listCustomers
+      summary: List customers
+      parameters:
+        - name: email
+          in: query
+          schema:
+
+            type: string
+            format: email
+        - $ref: "#/components/parameters/CreatedGte"
+        - $ref: "#/components/parameters/CreatedLte"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/StartingAfter"
+      responses:
+        200:
+          description: Paginated list of customers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerList"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /customers/{customerId}:
+    get:
+      tags:
+        - Customers
+      operationId: getCustomer
+      summary: Retrieve a customer
+      parameters:
+        - $ref: "#/components/parameters/CustomerIdPath"
+      responses:
+        200:
+          description: Customer object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+    put:
+      tags:
+        - Customers
+      operationId: updateCustomer
+      summary: Update a customer
+      parameters:
+        - $ref: "#/components/parameters/CustomerIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCustomerRequest"
+      responses:
+        200:
+          description: Updated customer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        400:
+          $ref: "#/components/responses/BadRequest"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+    delete:
+      tags:
+        - Customers
+      operationId: deleteCustomer
+      summary: Delete a customer
+      description: Permanently deletes a customer and their associated data (GDPR erasure).
+      parameters:
+        - $ref: "#/components/parameters/CustomerIdPath"
+      responses:
+        204:
+          description: Customer deleted successfully
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        403:
+          $ref: "#/components/responses/Forbidden"
+        404:
+          $ref: "#/components/responses/NotFound"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /payment-methods/tokenize:
+    post:
+      tags:
+        - Payment Methods
+      operationId: tokenizePaymentMethod
+      summary: Tokenize a card or bank account
+      description: Client-side tokenization. Use publishable key. No raw card data is stored.
+      security:
+        - PublishableKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenizePaymentMethodRequest"
+      responses:
+        201:
+          description: Payment method token created
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              description: URL of the newly created payment method resource
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentMethod"
+        400:
+          $ref: "#/components/responses/BadRequest"
+        422:
+          $ref: "#/components/responses/UnprocessableEntity"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /payment-methods/validate:
+    post:
+      tags:
+        - Payment Methods
+      operationId: validatePaymentMethod
+      summary: Validate a payment method token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - payment_method_id
+              properties:
+                payment_method_id:
+                  type: string
+      responses:
+        200:
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentMethodValidationResult"
+        400:
+          $ref: "#/components/responses/BadRequest"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /customers/{customerId}/payment-methods:
+    post:
+      tags:
+        - Payment Methods
+      operationId: attachPaymentMethod
+      summary: Attach a payment method to a customer
+      parameters:
+        - $ref: "#/components/parameters/CustomerIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - payment_method_id
+              properties:
+                payment_method_id:
+                  type: string
+      responses:
+        200:
+          description: Attached payment method
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentMethod"
+        400:
+          $ref: "#/components/responses/BadRequest"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+    get:
+      tags:
+        - Payment Methods
+      operationId: listPaymentMethods
+      summary: List customer payment methods
+      parameters:
+        - $ref: "#/components/parameters/CustomerIdPath"
+        - name: type
+          in: query
+          schema:
+
+            type: string
+            enum:
+              - card
+              - bank_account
+              - wallet
+      responses:
+        200:
+          description: Payment method list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentMethodList"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /customers/{customerId}/payment-methods/{methodId}:
+    get:
+      tags:
+        - Payment Methods
+      operationId: getPaymentMethod
+      summary: Retrieve a payment method
+      parameters:
+        - $ref: "#/components/parameters/CustomerIdPath"
+        - name: methodId
+          in: path
+          required: true
+          schema:
+
+            type: string
+      responses:
+        200:
+          description: Payment method
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentMethod"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+    put:
+      tags:
+        - Payment Methods
+      operationId: updatePaymentMethod
+      summary: "Update a payment method (billing address, expiry)"
+      parameters:
+        - $ref: "#/components/parameters/CustomerIdPath"
+        - name: methodId
+          in: path
+          required: true
+          schema:
+
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePaymentMethodRequest"
+      responses:
+        200:
+          description: Updated payment method
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentMethod"
+        400:
+          $ref: "#/components/responses/BadRequest"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+    delete:
+      tags:
+        - Payment Methods
+      operationId: detachPaymentMethod
+      summary: Detach a payment method from customer
+      parameters:
+        - $ref: "#/components/parameters/CustomerIdPath"
+        - name: methodId
+          in: path
+          required: true
+          schema:
+
+            type: string
+      responses:
+        204:
+          description: Payment method detached successfully
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        403:
+          $ref: "#/components/responses/Forbidden"
+        404:
+          $ref: "#/components/responses/NotFound"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /customers/{customerId}/payment-methods/{methodId}/default:
+    put:
+      tags:
+        - Payment Methods
+      operationId: setDefaultPaymentMethod
+      summary: Set default payment method for a customer
+      parameters:
+        - $ref: "#/components/parameters/CustomerIdPath"
+        - name: methodId
+          in: path
+          required: true
+          schema:
+
+            type: string
+      responses:
+        200:
+          description: Default payment method updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /invoices:
+    post:
+      tags:
+        - Invoices
+      operationId: createInvoice
+      summary: Create a draft invoice
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInvoiceRequest"
+      responses:
+        201:
+          description: Invoice created
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              description: URL of the newly created invoice resource
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+        400:
+          $ref: "#/components/responses/BadRequest"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        422:
+          $ref: "#/components/responses/UnprocessableEntity"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+    get:
+      tags:
+        - Invoices
+      operationId: listInvoices
+      summary: List invoices
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+        - name: status
+          in: query
+          schema:
+
+            type: string
+            enum:
+              - draft
+              - open
+              - paid
+              - uncollectible
+              - void
+        - name: subscription_id
+          in: query
+          schema:
+
+            type: string
+        - name: due_date_gte
+          in: query
+          schema:
+
+            type: string
+            format: date
+        - $ref: "#/components/parameters/CreatedGte"
+        - $ref: "#/components/parameters/CreatedLte"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/StartingAfter"
+      responses:
+        200:
+          description: Invoice list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceList"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /invoices/{invoiceId}:
+    get:
+      tags:
+        - Invoices
+      operationId: getInvoice
+      summary: Retrieve an invoice
+      parameters:
+        - $ref: "#/components/parameters/InvoiceId"
+      responses:
+        200:
+          description: Invoice object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+    put:
+      tags:
+        - Invoices
+      operationId: updateInvoice
+      summary: Update a draft invoice
+      parameters:
+        - $ref: "#/components/parameters/InvoiceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateInvoiceRequest"
+      responses:
+        200:
+          description: Updated invoice
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+        400:
+          $ref: "#/components/responses/BadRequest"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        422:
+          $ref: "#/components/responses/UnprocessableEntity"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+    delete:
+      tags:
+        - Invoices
+      operationId: deleteInvoice
+      summary: Delete a draft invoice
+      parameters:
+        - $ref: "#/components/parameters/InvoiceId"
+      responses:
+        204:
+          description: Invoice deleted successfully
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        403:
+          $ref: "#/components/responses/Forbidden"
+        404:
+          $ref: "#/components/responses/NotFound"
+        422:
+          $ref: "#/components/responses/UnprocessableEntity"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /invoices/{invoiceId}/finalize:
+    post:
+      tags:
+        - Invoices
+      operationId: finalizeInvoice
+      summary: Finalize an invoice (draft → open)
+      parameters:
+        - $ref: "#/components/parameters/InvoiceId"
+      responses:
+        200:
+          description: Finalized invoice
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        422:
+          $ref: "#/components/responses/UnprocessableEntity"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /invoices/{invoiceId}/pay:
+    post:
+      tags:
+        - Invoices
+      operationId: payInvoice
+      summary: Pay an open invoice
+      parameters:
+        - $ref: "#/components/parameters/InvoiceId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payment_method:
+                  type: string
+                  description: Payment method token or ID
+      responses:
+        200:
+          description: Invoice paid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        402:
+          $ref: "#/components/responses/PaymentRequired"
+        404:
+          $ref: "#/components/responses/NotFound"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /invoices/{invoiceId}/send:
+    post:
+      tags:
+        - Invoices
+      operationId: sendInvoice
+      summary: Send an invoice by email
+      parameters:
+        - $ref: "#/components/parameters/InvoiceId"
+      responses:
+        200:
+          description: Invoice sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /invoices/{invoiceId}/void:
+    post:
+      tags:
+        - Invoices
+      operationId: voidInvoice
+      summary: Void an open invoice
+      parameters:
+        - $ref: "#/components/parameters/InvoiceId"
+      responses:
+        200:
+          description: Voided invoice
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        422:
+          $ref: "#/components/responses/UnprocessableEntity"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /balance:
+    get:
+      tags:
+        - Balance
+      operationId: getBalance
+      summary: Retrieve current account balance
+      responses:
+        200:
+          description: Balance object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Balance"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /balance/transactions:
+    get:
+      tags:
+        - Balance
+      operationId: listBalanceTransactions
+      summary: List balance transactions
+      parameters:
+        - name: type
+          in: query
+          schema:
+
+            type: string
+            enum:
+              - charge
+              - refund
+              - adjustment
+              - application_fee
+              - application_fee_refund
+              - transfer
+              - transfer_cancel
+              - transfer_failure
+              - transfer_refund
+              - payout
+              - payout_cancel
+              - payout_failure
+        - name: payout_id
+          in: query
+          schema:
+
+            type: string
+        - name: currency
+          in: query
+          schema:
+
+            type: string
+        - $ref: "#/components/parameters/CreatedGte"
+        - $ref: "#/components/parameters/CreatedLte"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/StartingAfter"
+      responses:
+        200:
+          description: Balance transaction list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BalanceTransactionList"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /balance/transactions/{txnId}:
+    get:
+      tags:
+        - Balance
+      operationId: getBalanceTransaction
+      summary: Retrieve a balance transaction
+      parameters:
+        - name: txnId
+          in: path
+          required: true
+          schema:
+
+            type: string
+      responses:
+        200:
+          description: Balance transaction object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BalanceTransaction"
+        401:
+          $ref: "#/components/responses/Unauthorized"
+        404:
+          $ref: "#/components/responses/NotFound"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+components:
+  securitySchemes:
+    BasicAuth:
+      type: http
+      scheme: basic
+      description: "Use secret key as username, empty password"
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    PublishableKeyAuth:
+      type: http
+      scheme: basic
+      description: Use publishable key for client-side tokenization
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Unique key to safely retry requests without duplicate side-effects
+    PaymentId:
+      name: paymentId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Unique payment identifier
+    RefundId:
+      name: refundId
+      in: path
+      required: true
+      schema:
+        type: string
+    CustomerIdPath:
+      name: customerId
+      in: path
+      required: true
+      schema:
+        type: string
+    CustomerId:
+      name: customer_id
+      in: query
+      schema:
+        type: string
+    SubscriptionId:
+      name: subscriptionId
+      in: path
+      required: true
+      schema:
+        type: string
+    InvoiceId:
+      name: invoiceId
+      in: path
+      required: true
+      schema:
+        type: string
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema:
+        type: string
+    StatusFilter:
+      name: status
+      in: query
+      schema:
+        type: string
+    CreatedGte:
+      name: "created[gte]"
+      in: query
+      schema:
+        type: string
+        format: date-time
+      description: "Filter by created date >= value (ISO 8601)"
+    CreatedLte:
+      name: "created[lte]"
+      in: query
+      schema:
+        type: string
+        format: date-time
+      description: Filter by created date <= value (ISO 8601)
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    StartingAfter:
+      name: starting_after
+      in: query
+      schema:
+        type: string
+      description: Cursor for forward pagination (ID of last item in previous page)
+    EndingBefore:
+      name: ending_before
+      in: query
+      schema:
+        type: string
+      description: Cursor for backward pagination
+  schemas:
+    Metadata:
+      type: object
+      additionalProperties:
+        type: string
+      maxProperties: 50
+      description: "Set of key-value pairs for custom data. Keys max 40 chars, values max 500 chars."
+    Address:
+      type: object
+      properties:
+        line1:
+          type: string
+          maxLength: 200
+        line2:
+          type: string
+          maxLength: 200
+        city:
+          type: string
+          maxLength: 100
+        state:
+          type: string
+          maxLength: 100
+        postal_code:
+          type: string
+          maxLength: 20
+        country:
+          type: string
+          pattern: "^[A-Z]{2}$"
+          description: ISO 3166-1 alpha-2 country code
+    BillingDetails:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+          maxLength: 30
+        address:
+          $ref: "#/components/schemas/Address"
+    ListMeta:
+      type: object
+      properties:
+        has_more:
+          type: boolean
+        total_count:
+          type: integer
+        url:
+          type: string
+    DeletedObject:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+        deleted:
+          type: boolean
+          example: true
+    CreatePaymentRequest:
+      type: object
+      required:
+        - amount
+        - currency
+      properties:
+        amount:
+          type: integer
+          minimum: 1
+          description: "Amount in smallest currency unit (e.g., cents)"
+          example: 2000
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+          description: ISO 4217 currency code
+          example: USD
+        payment_method:
+          type: string
+          description: Payment method token or saved payment method ID
+        customer_id:
+          type: string
+          description: Customer ID to associate with this payment
+        capture_method:
+          type: string
+          enum:
+            - automatic
+            - manual
+          default: automatic
+          description: automatic = charge immediately; manual = authorize only
+        description:
+          type: string
+          maxLength: 1000
+        statement_descriptor:
+          type: string
+          maxLength: 22
+          description: Text shown on customer bank statement
+        statement_descriptor_suffix:
+          type: string
+          maxLength: 22
+        receipt_email:
+          type: string
+          format: email
+        return_url:
+          type: string
+          format: uri
+          description: "URL for redirect-based payment methods (3DS, wallets)"
+        confirm:
+          type: boolean
+          default: false
+          description: "If true, attempt to confirm the payment immediately"
+        setup_future_usage:
+          type: string
+          enum:
+            - on_session
+            - off_session
+          description: Indicates payment method should be saved for future use
+        shipping:
+          type: object
+          properties:
+            name:
+              type: string
+            address:
+              $ref: "#/components/schemas/Address"
+            tracking_number:
+              type: string
+        application_fee_amount:
+          type: integer
+          description: Platform application fee (marketplace only)
+        on_behalf_of:
+          type: string
+          description: Connected account ID (marketplace only)
+        transfer_data:
+          type: object
+          properties:
+            destination:
+              type: string
+            amount:
+              type: integer
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    CapturePaymentRequest:
+      type: object
+      properties:
+        amount_to_capture:
+          type: integer
+          minimum: 1
+          description: Amount to capture; must be <= authorized amount
+        statement_descriptor_suffix:
+          type: string
+          maxLength: 22
+        transfer_data:
+          type: object
+          properties:
+            amount:
+              type: integer
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    VoidPaymentRequest:
+      type: object
+      properties:
+        cancellation_reason:
+          type: string
+          enum:
+            - duplicate
+            - fraudulent
+            - requested_by_customer
+            - abandoned
+    ConfirmPaymentRequest:
+      type: object
+      properties:
+        payment_method:
+          type: string
+        return_url:
+          type: string
+          format: uri
+        mandate_data:
+          type: object
+          properties:
+            customer_acceptance:
+              type: object
+    CancelPaymentRequest:
+      type: object
+      properties:
+        cancellation_reason:
+          type: string
+          enum:
+            - duplicate
+            - fraudulent
+            - requested_by_customer
+            - abandoned
+    Payment:
+      type: object
+      properties:
+        id:
+          type: string
+          example: pay_1A2B3C4D
+        object:
+          type: string
+          example: payment
+        amount:
+          type: integer
+          example: 2000
+        amount_capturable:
+          type: integer
+        amount_received:
+          type: integer
+        currency:
+          type: string
+          example: USD
+        status:
+          type: string
+          enum:
+            - created
+            - processing
+            - requires_action
+            - requires_confirmation
+            - requires_capture
+            - authorized
+            - captured
+            - succeeded
+            - failed
+            - cancelled
+        capture_method:
+          type: string
+          enum:
+            - automatic
+            - manual
+        customer_id:
+          type: string
+        payment_method_id:
+          type: string
+        payment_method_details:
+          $ref: "#/components/schemas/PaymentMethodDetails"
+        description:
+          type: string
+        statement_descriptor:
+          type: string
+        receipt_email:
+          type: string
+        receipt_url:
+          type: string
+          format: uri
+        failure_code:
+          type: string
+          description: Acquirer decline code on failure
+        failure_message:
+          type: string
+        next_action:
+          $ref: "#/components/schemas/NextAction"
+        refunds:
+          $ref: "#/components/schemas/RefundList"
+        dispute:
+          $ref: "#/components/schemas/Dispute"
+        balance_transaction:
+          type: string
+        on_behalf_of:
+          type: string
+        application_fee_amount:
+          type: integer
+        transfer_data:
+          type: object
+        three_d_secure:
+          $ref: "#/components/schemas/ThreeDSAuth"
+        risk_score:
+          type: integer
+          minimum: 0
+          maximum: 100
+        shipping:
+          type: object
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    NextAction:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - redirect_to_url
+            - use_stripe_sdk
+            - otp_send_code
+            - verify_with_microdeposits
+        redirect_to_url:
+          type: object
+          properties:
+            url:
+              type: string
+              format: uri
+            return_url:
+              type: string
+              format: uri
+    PaymentList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Payment"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    PaymentMethodDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - card
+            - bank_account
+            - wallet
+            - sepa_debit
+            - ach_debit
+            - ideal
+            - sofort
+            - giropay
+            - bancontact
+            - upi
+        card:
+          $ref: "#/components/schemas/CardDetails"
+        bank_account:
+          $ref: "#/components/schemas/BankAccountDetails"
+    CardDetails:
+      type: object
+      properties:
+        brand:
+          type: string
+          enum:
+            - visa
+            - mastercard
+            - amex
+            - discover
+            - unionpay
+            - jcb
+            - diners
+        last4:
+          type: string
+          pattern: "^\\d{4}$"
+        exp_month:
+          type: integer
+        exp_year:
+          type: integer
+        fingerprint:
+          type: string
+        funding:
+          type: string
+          enum:
+            - credit
+            - debit
+            - prepaid
+            - unknown
+        country:
+          type: string
+        three_d_secure:
+          type: object
+        network_token:
+          type: string
+        installments:
+          type: object
+    BankAccountDetails:
+      type: object
+      properties:
+        bank_name:
+          type: string
+        routing_number:
+          type: string
+        last4:
+          type: string
+        account_type:
+          type: string
+          enum:
+            - checking
+            - savings
+    CreateRefundRequest:
+      type: object
+      properties:
+        amount:
+          type: integer
+          minimum: 1
+          description: Refund amount; omit for full refund
+        reason:
+          type: string
+          enum:
+            - duplicate
+            - fraudulent
+            - requested_by_customer
+        refund_application_fee:
+          type: boolean
+        reverse_transfer:
+          type: boolean
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    Refund:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: refund
+        amount:
+          type: integer
+        currency:
+          type: string
+        payment_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - processing
+            - succeeded
+            - failed
+            - cancelled
+        reason:
+          type: string
+        failure_reason:
+          type: string
+        balance_transaction:
+          type: string
+        receipt_number:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        created_at:
+          type: string
+          format: date-time
+    RefundList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Refund"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    CreateCustomerRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+          maxLength: 200
+        phone:
+          type: string
+          maxLength: 30
+        description:
+          type: string
+          maxLength: 500
+        address:
+          $ref: "#/components/schemas/Address"
+        shipping:
+          type: object
+          properties:
+            name:
+              type: string
+            address:
+              $ref: "#/components/schemas/Address"
+        payment_method:
+          type: string
+          description: Attach a payment method on creation
+        invoice_settings:
+          type: object
+          properties:
+            default_payment_method:
+              type: string
+        tax_exempt:
+          type: string
+          enum:
+            - none
+            - exempt
+            - reverse
+        tax_ids:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              value:
+                type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    UpdateCustomerRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        phone:
+          type: string
+        description:
+          type: string
+        address:
+          $ref: "#/components/schemas/Address"
+        shipping:
+          type: object
+        invoice_settings:
+          type: object
+        tax_exempt:
+          type: string
+          enum:
+            - none
+            - exempt
+            - reverse
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    Customer:
+      type: object
+      properties:
+        id:
+          type: string
+          example: cus_1A2B3C
+        object:
+          type: string
+          example: customer
+        email:
+          type: string
+        name:
+          type: string
+        phone:
+          type: string
+        description:
+          type: string
+        address:
+          $ref: "#/components/schemas/Address"
+        shipping:
+          type: object
+        default_payment_method_id:
+          type: string
+        balance:
+          type: integer
+          description: Customer credit balance in smallest currency unit
+        currency:
+          type: string
+        delinquent:
+          type: boolean
+        invoice_settings:
+          type: object
+        tax_exempt:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        created_at:
+          type: string
+          format: date-time
+    CustomerList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Customer"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    TokenizePaymentMethodRequest:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum:
+            - card
+            - bank_account
+            - wallet
+        card:
+          type: object
+          required:
+            - number
+            - exp_month
+            - exp_year
+            - cvc
+          properties:
+            number:
+              type: string
+              description: Card number (only accepted over HTTPS; never stored)
+              pattern: "^\\d{13,19}$"
+            exp_month:
+              type: integer
+              minimum: 1
+              maximum: 12
+            exp_year:
+              type: integer
+              minimum: 2024
+            cvc:
+              type: string
+              pattern: "^\\d{3,4}$"
+        bank_account:
+          type: object
+          properties:
+            account_number:
+              type: string
+            routing_number:
+              type: string
+            account_type:
+              type: string
+              enum:
+                - checking
+                - savings
+            account_holder_name:
+              type: string
+            account_holder_type:
+              type: string
+              enum:
+                - individual
+                - company
+        billing_details:
+          $ref: "#/components/schemas/BillingDetails"
+    UpdatePaymentMethodRequest:
+      type: object
+      properties:
+        billing_details:
+          $ref: "#/components/schemas/BillingDetails"
+        card:
+          type: object
+          properties:
+            exp_month:
+              type: integer
+            exp_year:
+              type: integer
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    PaymentMethod:
+      type: object
+      properties:
+        id:
+          type: string
+          example: pm_1A2B3C
+        object:
+          type: string
+          example: payment_method
+        type:
+          type: string
+          enum:
+            - card
+            - bank_account
+            - wallet
+            - sepa_debit
+            - ach_debit
+        card:
+          $ref: "#/components/schemas/CardDetails"
+        bank_account:
+          $ref: "#/components/schemas/BankAccountDetails"
+        billing_details:
+          $ref: "#/components/schemas/BillingDetails"
+        customer_id:
+          type: string
+        fingerprint:
+          type: string
+        is_default:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    PaymentMethodList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentMethod"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    PaymentMethodValidationResult:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        errors:
+          type: array
+          items:
+            type: string
+    CreatePlanRequest:
+      type: object
+      required:
+        - currency
+        - interval
+      properties:
+        amount:
+          type: integer
+          description: Amount in smallest currency unit
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+        interval:
+          type: string
+          enum:
+            - day
+            - week
+            - month
+            - year
+        interval_count:
+          type: integer
+          minimum: 1
+          default: 1
+        product_id:
+          type: string
+          description: Link to existing product
+        product:
+          type: object
+          description: Inline product creation
+          properties:
+            name:
+              type: string
+        nickname:
+          type: string
+        trial_period_days:
+          type: integer
+          minimum: 0
+        usage_type:
+          type: string
+          enum:
+            - licensed
+            - metered
+          default: licensed
+        aggregate_usage:
+          type: string
+          enum:
+            - sum
+            - last_during_period
+            - last_ever
+            - max
+        billing_scheme:
+          type: string
+          enum:
+            - per_unit
+            - tiered
+          default: per_unit
+        tiers:
+          type: array
+          items:
+            type: object
+            properties:
+              up_to:
+                oneOf:
+                  - type: integer
+                  - type: string
+                    enum:
+
+                      - inf
+              unit_amount:
+                type: integer
+              flat_amount:
+                type: integer
+        tiers_mode:
+          type: string
+          enum:
+            - graduated
+            - volume
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    UpdatePlanRequest:
+      type: object
+      properties:
+        nickname:
+          type: string
+        trial_period_days:
+          type: integer
+        active:
+          type: boolean
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    Plan:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: plan
+        active:
+          type: boolean
+        amount:
+          type: integer
+        currency:
+          type: string
+        interval:
+          type: string
+        interval_count:
+          type: integer
+        product_id:
+          type: string
+        nickname:
+          type: string
+        trial_period_days:
+          type: integer
+        usage_type:
+          type: string
+        billing_scheme:
+          type: string
+        tiers:
+          type: array
+          items:
+            type: object
+        tiers_mode:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        created_at:
+          type: string
+          format: date-time
+    PlanList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Plan"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    CreateSubscriptionRequest:
+      type: object
+      required:
+        - customer_id
+        - items
+      properties:
+        customer_id:
+          type: string
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required:
+              - price_id
+            properties:
+              price_id:
+                type: string
+              quantity:
+                type: integer
+                minimum: 1
+                default: 1
+              metadata:
+                $ref: "#/components/schemas/Metadata"
+        payment_method_id:
+          type: string
+        trial_period_days:
+          type: integer
+          minimum: 0
+        trial_end:
+          type: string
+          format: date-time
+        cancel_at_period_end:
+          type: boolean
+          default: false
+        cancel_at:
+          type: string
+          format: date-time
+        billing_cycle_anchor:
+          type: string
+          format: date-time
+        proration_behavior:
+          type: string
+          enum:
+            - create_prorations
+            - none
+            - always_invoice
+          default: create_prorations
+        payment_behavior:
+          type: string
+          enum:
+            - allow_incomplete
+            - default_incomplete
+            - error_if_incomplete
+            - pending_if_incomplete
+        collection_method:
+          type: string
+          enum:
+            - charge_automatically
+            - send_invoice
+          default: charge_automatically
+        days_until_due:
+          type: integer
+        application_fee_percent:
+          type: number
+          minimum: 0
+          maximum: 100
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    UpdateSubscriptionRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+        cancel_at_period_end:
+          type: boolean
+        payment_method_id:
+          type: string
+        proration_behavior:
+          type: string
+        trial_end:
+          type: string
+          format: date-time
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    CancelSubscriptionRequest:
+      type: object
+      properties:
+        cancel_at_period_end:
+          type: boolean
+          default: false
+        cancellation_reason:
+          type: string
+    Subscription:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: subscription
+        status:
+          type: string
+          enum:
+            - trialing
+            - active
+            - past_due
+            - cancelled
+            - incomplete
+            - incomplete_expired
+            - unpaid
+            - paused
+        customer_id:
+          type: string
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              price_id:
+                type: string
+              quantity:
+                type: integer
+        current_period_start:
+          type: string
+          format: date-time
+        current_period_end:
+          type: string
+          format: date-time
+        trial_start:
+          type: string
+          format: date-time
+        trial_end:
+          type: string
+          format: date-time
+        cancel_at:
+          type: string
+          format: date-time
+        cancel_at_period_end:
+          type: boolean
+        cancelled_at:
+          type: string
+          format: date-time
+        paused_at:
+          type: string
+          format: date-time
+        resuming_at:
+          type: string
+          format: date-time
+        default_payment_method_id:
+          type: string
+        latest_invoice_id:
+          type: string
+        collection_method:
+          type: string
+        days_until_due:
+          type: integer
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        created_at:
+          type: string
+          format: date-time
+    SubscriptionList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Subscription"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    CreateInvoiceItemRequest:
+      type: object
+      required:
+        - customer_id
+        - currency
+      properties:
+        customer_id:
+          type: string
+        invoice_id:
+          type: string
+        amount:
+          type: integer
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+        description:
+          type: string
+        price_id:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+          default: 1
+        unit_amount:
+          type: integer
+        tax_rates:
+          type: array
+          items:
+            type: string
+        discountable:
+          type: boolean
+          default: true
+        period:
+          type: object
+          properties:
+            start:
+              type: string
+              format: date-time
+            end:
+              type: string
+              format: date-time
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    UpdateInvoiceItemRequest:
+      type: object
+      properties:
+        amount:
+          type: integer
+        description:
+          type: string
+        quantity:
+          type: integer
+        unit_amount:
+          type: integer
+        tax_rates:
+          type: array
+          items:
+            type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    InvoiceItem:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: invoice_item
+        customer_id:
+          type: string
+        invoice_id:
+          type: string
+        amount:
+          type: integer
+        currency:
+          type: string
+        description:
+          type: string
+        quantity:
+          type: integer
+        unit_amount:
+          type: integer
+        price_id:
+          type: string
+        tax_rates:
+          type: array
+          items:
+            type: string
+        discountable:
+          type: boolean
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        created_at:
+          type: string
+          format: date-time
+    InvoiceItemList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/InvoiceItem"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    CreateInvoiceRequest:
+      type: object
+      required:
+        - customer_id
+      properties:
+        customer_id:
+          type: string
+        subscription_id:
+          type: string
+        auto_advance:
+          type: boolean
+          default: true
+          description: "If true, auto-finalize draft invoices"
+        collection_method:
+          type: string
+          enum:
+            - charge_automatically
+            - send_invoice
+          default: charge_automatically
+        due_date:
+          type: string
+          format: date
+        description:
+          type: string
+        footer:
+          type: string
+        statement_descriptor:
+          type: string
+        payment_method_id:
+          type: string
+        account_tax_ids:
+          type: array
+          items:
+            type: string
+        default_tax_rates:
+          type: array
+          items:
+            type: string
+        discount:
+          type: object
+          properties:
+            coupon:
+              type: string
+            discount_id:
+              type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    UpdateInvoiceRequest:
+      type: object
+      properties:
+        auto_advance:
+          type: boolean
+        collection_method:
+          type: string
+        due_date:
+          type: string
+          format: date
+        description:
+          type: string
+        footer:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    Invoice:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: invoice
+        status:
+          type: string
+          enum:
+            - draft
+            - open
+            - paid
+            - uncollectible
+            - void
+        customer_id:
+          type: string
+        subscription_id:
+          type: string
+        number:
+          type: string
+          description: Human-readable invoice number
+        amount_due:
+          type: integer
+        amount_paid:
+          type: integer
+        amount_remaining:
+          type: integer
+        subtotal:
+          type: integer
+        tax:
+          type: integer
+        total:
+          type: integer
+        currency:
+          type: string
+        lines:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: "#/components/schemas/InvoiceItem"
+        due_date:
+          type: string
+          format: date
+        paid_at:
+          type: string
+          format: date-time
+        voided_at:
+          type: string
+          format: date-time
+        hosted_invoice_url:
+          type: string
+          format: uri
+        invoice_pdf:
+          type: string
+          format: uri
+        payment_intent_id:
+          type: string
+        collection_method:
+          type: string
+        footer:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        created_at:
+          type: string
+          format: date-time
+    InvoiceList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Invoice"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    DisputeEvidenceRequest:
+      type: object
+      properties:
+        customer_name:
+          type: string
+        customer_email:
+          type: string
+          format: email
+        customer_purchase_ip:
+          type: string
+          format: ipv4
+        product_description:
+          type: string
+        shipping_documentation:
+          type: string
+          description: File ID of uploaded shipping proof
+        receipt:
+          type: string
+          description: File ID of uploaded receipt
+        uncategorized_text:
+          type: string
+        uncategorized_file:
+          type: string
+        submit:
+          type: boolean
+          default: false
+          description: "If true, submit evidence immediately"
+    Dispute:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: dispute
+        payment_id:
+          type: string
+        amount:
+          type: integer
+        currency:
+          type: string
+        status:
+          type: string
+          enum:
+            - warning_needs_response
+            - needs_response
+            - under_review
+            - charge_refunded
+            - won
+            - lost
+        reason:
+          type: string
+          enum:
+            - bank_cannot_process
+            - check_returned
+            - credit_not_processed
+            - customer_initiated
+            - debit_not_authorized
+            - duplicate
+            - fraudulent
+            - general
+            - incorrect_account_details
+            - insufficient_funds
+            - product_not_received
+            - product_unacceptable
+            - subscription_cancelled
+            - unrecognized
+        evidence_details:
+          type: object
+          properties:
+            due_by:
+              type: string
+              format: date-time
+            has_evidence:
+              type: boolean
+            past_due:
+              type: boolean
+            submission_count:
+              type: integer
+        evidence:
+          type: object
+        balance_transactions:
+          type: array
+          items:
+            type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        created_at:
+          type: string
+          format: date-time
+    DisputeList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Dispute"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    CreatePayoutRequest:
+      type: object
+      required:
+        - amount
+        - currency
+      properties:
+        amount:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+        destination:
+          type: string
+          description: Bank account or card ID
+        method:
+          type: string
+          enum:
+            - standard
+            - instant
+          default: standard
+        source_type:
+          type: string
+          enum:
+            - bank_account
+            - card
+            - fpx
+        statement_descriptor:
+          type: string
+          maxLength: 22
+        description:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    Payout:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: payout
+        amount:
+          type: integer
+        currency:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - in_transit
+            - paid
+            - failed
+            - cancelled
+        method:
+          type: string
+        destination:
+          type: string
+        failure_code:
+          type: string
+        failure_message:
+          type: string
+        arrival_date:
+          type: string
+          format: date
+        description:
+          type: string
+        statement_descriptor:
+          type: string
+        balance_transaction:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        created_at:
+          type: string
+          format: date-time
+    PayoutList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Payout"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    Balance:
+      type: object
+      properties:
+        object:
+          type: string
+          example: balance
+        available:
+          type: array
+          items:
+            $ref: "#/components/schemas/BalanceFund"
+        pending:
+          type: array
+          items:
+            $ref: "#/components/schemas/BalanceFund"
+        reserved:
+          type: array
+          items:
+            $ref: "#/components/schemas/BalanceFund"
+    BalanceFund:
+      type: object
+      properties:
+        amount:
+          type: integer
+        currency:
+          type: string
+        source_types:
+          type: object
+    BalanceTransaction:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: balance_transaction
+        amount:
+          type: integer
+        fee:
+          type: integer
+        net:
+          type: integer
+        currency:
+          type: string
+        type:
+          type: string
+        status:
+          type: string
+          enum:
+            - available
+            - pending
+        source:
+          type: string
+        description:
+          type: string
+        reporting_category:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        available_on:
+          type: string
+          format: date-time
+    BalanceTransactionList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/BalanceTransaction"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    CreateTransferRequest:
+      type: object
+      required:
+        - amount
+        - currency
+        - destination
+      properties:
+        amount:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+        destination:
+          type: string
+          description: Connected account ID
+        source_transaction:
+          type: string
+          description: Charge ID to transfer from (for non-split transfers)
+        description:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    Transfer:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: transfer
+        amount:
+          type: integer
+        amount_reversed:
+          type: integer
+        currency:
+          type: string
+        destination:
+          type: string
+        source_transaction:
+          type: string
+        description:
+          type: string
+        balance_transaction:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        created_at:
+          type: string
+          format: date-time
+    TransferList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transfer"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    TransferReversal:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: transfer_reversal
+        amount:
+          type: integer
+        currency:
+          type: string
+        transfer_id:
+          type: string
+        balance_transaction:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        created_at:
+          type: string
+          format: date-time
+    TransferReversalList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/TransferReversal"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    CreateAccountRequest:
+      type: object
+      required:
+        - type
+        - country
+      properties:
+        type:
+          type: string
+          enum:
+            - express
+            - custom
+            - standard
+        country:
+          type: string
+          pattern: "^[A-Z]{2}$"
+        email:
+          type: string
+          format: email
+        business_type:
+          type: string
+          enum:
+            - individual
+            - company
+            - non_profit
+            - government_entity
+        capabilities:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              requested:
+                type: boolean
+        business_profile:
+          type: object
+          properties:
+            url:
+              type: string
+              format: uri
+            mcc:
+              type: string
+            name:
+              type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    UpdateAccountRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        business_profile:
+          type: object
+        settings:
+          type: object
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    Account:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: account
+        type:
+          type: string
+        country:
+          type: string
+        email:
+          type: string
+        business_type:
+          type: string
+        capabilities:
+          type: object
+        charges_enabled:
+          type: boolean
+        payouts_enabled:
+          type: boolean
+        details_submitted:
+          type: boolean
+        requirements:
+          type: object
+          properties:
+            currently_due:
+              type: array
+              items:
+                type: string
+            eventually_due:
+              type: array
+              items:
+                type: string
+            past_due:
+              type: array
+              items:
+                type: string
+        business_profile:
+          type: object
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        created_at:
+          type: string
+          format: date-time
+    AccountList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Account"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    CreateBankAccountRequest:
+      type: object
+      required:
+        - account_number
+        - routing_number
+        - country
+        - currency
+      properties:
+        account_number:
+          type: string
+        routing_number:
+          type: string
+        country:
+          type: string
+        currency:
+          type: string
+        account_holder_name:
+          type: string
+        account_holder_type:
+          type: string
+          enum:
+            - individual
+            - company
+    BankAccount:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: bank_account
+        account_id:
+          type: string
+        bank_name:
+          type: string
+        country:
+          type: string
+        currency:
+          type: string
+        last4:
+          type: string
+        routing_number:
+          type: string
+        status:
+          type: string
+          enum:
+            - new
+            - validated
+            - verified
+            - verification_failed
+            - errored
+        default_for_currency:
+          type: boolean
+    BankAccountList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/BankAccount"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    CreateCheckoutSessionRequest:
+      type: object
+      required:
+        - mode
+        - success_url
+        - cancel_url
+      properties:
+        mode:
+          type: string
+          enum:
+            - payment
+            - subscription
+            - setup
+        line_items:
+          type: array
+          items:
+            type: object
+            properties:
+              price_id:
+                type: string
+              quantity:
+                type: integer
+        success_url:
+          type: string
+          format: uri
+        cancel_url:
+          type: string
+          format: uri
+        customer_id:
+          type: string
+        customer_email:
+          type: string
+          format: email
+        payment_method_types:
+          type: array
+          items:
+            type: string
+            enum:
+              - card
+              - ach_debit
+              - sepa_debit
+              - ideal
+              - sofort
+              - bancontact
+              - giropay
+              - apple_pay
+              - google_pay
+              - paypal
+        expires_at:
+          type: string
+          format: date-time
+        allow_promotion_codes:
+          type: boolean
+        billing_address_collection:
+          type: string
+          enum:
+            - auto
+            - required
+        shipping_address_collection:
+          type: object
+          properties:
+            allowed_countries:
+              type: array
+              items:
+                type: string
+        currency:
+          type: string
+        locale:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    CheckoutSession:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: checkout_session
+        status:
+          type: string
+          enum:
+            - open
+            - complete
+            - expired
+        mode:
+          type: string
+        url:
+          type: string
+          format: uri
+          description: Hosted checkout URL
+        customer_id:
+          type: string
+        payment_intent_id:
+          type: string
+        subscription_id:
+          type: string
+        amount_total:
+          type: integer
+        currency:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        created_at:
+          type: string
+          format: date-time
+    CreatePaymentLinkRequest:
+      type: object
+      required:
+        - line_items
+      properties:
+        line_items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required:
+              - price_id
+              - quantity
+            properties:
+              price_id:
+                type: string
+              quantity:
+                type: integer
+        after_completion:
+          type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - redirect
+                - hosted_confirmation
+            redirect:
+              type: object
+              properties:
+                url:
+                  type: string
+                  format: uri
+        allow_promotion_codes:
+          type: boolean
+        billing_address_collection:
+          type: string
+          enum:
+            - auto
+            - required
+        currency:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    PaymentLink:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: payment_link
+        active:
+          type: boolean
+        url:
+          type: string
+          format: uri
+        line_items:
+          type: array
+          items:
+            type: object
+        after_completion:
+          type: object
+        allow_promotion_codes:
+          type: boolean
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        created_at:
+          type: string
+          format: date-time
+    PaymentLinkList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentLink"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    CreateProductRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          maxLength: 250
+        description:
+          type: string
+          maxLength: 1000
+        images:
+          type: array
+          maxItems: 8
+          items:
+            type: string
+            format: uri
+        unit_label:
+          type: string
+        url:
+          type: string
+          format: uri
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    UpdateProductRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        images:
+          type: array
+          items:
+            type: string
+            format: uri
+        active:
+          type: boolean
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: product
+        name:
+          type: string
+        description:
+          type: string
+        images:
+          type: array
+          items:
+            type: string
+            format: uri
+        active:
+          type: boolean
+        unit_label:
+          type: string
+        url:
+          type: string
+          format: uri
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ProductList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    CreatePriceRequest:
+      type: object
+      required:
+        - currency
+      properties:
+        product_id:
+          type: string
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+        unit_amount:
+          type: integer
+        recurring:
+          type: object
+          properties:
+            interval:
+              type: string
+              enum:
+                - day
+                - week
+                - month
+                - year
+            interval_count:
+              type: integer
+              minimum: 1
+            usage_type:
+              type: string
+              enum:
+                - licensed
+                - metered
+            aggregate_usage:
+              type: string
+        billing_scheme:
+          type: string
+          enum:
+            - per_unit
+            - tiered
+          default: per_unit
+        tiers_mode:
+          type: string
+          enum:
+            - graduated
+            - volume
+        tiers:
+          type: array
+          items:
+            type: object
+        nickname:
+          type: string
+        tax_behavior:
+          type: string
+          enum:
+            - inclusive
+            - exclusive
+            - unspecified
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    Price:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: price
+        product_id:
+          type: string
+        currency:
+          type: string
+        unit_amount:
+          type: integer
+        type:
+          type: string
+          enum:
+            - one_time
+            - recurring
+        recurring:
+          type: object
+        billing_scheme:
+          type: string
+        tiers_mode:
+          type: string
+        tiers:
+          type: array
+          items:
+            type: object
+        active:
+          type: boolean
+        nickname:
+          type: string
+        tax_behavior:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        created_at:
+          type: string
+          format: date-time
+    PriceList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Price"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    CreateTaxRateRequest:
+      type: object
+      required:
+        - display_name
+        - percentage
+      properties:
+        display_name:
+          type: string
+          maxLength: 50
+        percentage:
+          type: number
+          minimum: 0
+          maximum: 100
+        inclusive:
+          type: boolean
+          default: false
+        country:
+          type: string
+          pattern: "^[A-Z]{2}$"
+        state:
+          type: string
+        jurisdiction:
+          type: string
+        description:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+    TaxRate:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: tax_rate
+        display_name:
+          type: string
+        percentage:
+          type: number
+        inclusive:
+          type: boolean
+        active:
+          type: boolean
+        country:
+          type: string
+        state:
+          type: string
+        jurisdiction:
+          type: string
+        description:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        created_at:
+          type: string
+          format: date-time
+    TaxRateList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaxRate"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    TaxCalculationRequest:
+      type: object
+      required:
+        - currency
+        - line_items
+        - customer_details
+      properties:
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+        line_items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required:
+              - amount
+            properties:
+              amount:
+                type: integer
+              product_id:
+                type: string
+              tax_code:
+                type: string
+              quantity:
+                type: integer
+                default: 1
+        customer_details:
+          type: object
+          properties:
+            address:
+              $ref: "#/components/schemas/Address"
+            tax_ids:
+              type: array
+              items:
+                type: object
+            ip_address:
+              type: string
+        shipping_cost:
+          type: object
+          properties:
+            amount:
+              type: integer
+            tax_code:
+              type: string
+    TaxCalculation:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: tax_calculation
+        amount_total:
+          type: integer
+        tax_amount_exclusive:
+          type: integer
+        tax_amount_inclusive:
+          type: integer
+        currency:
+          type: string
+        line_items:
+          type: array
+          items:
+            type: object
+            properties:
+              amount:
+                type: integer
+              tax_amount:
+                type: integer
+              tax_breakdown:
+                type: array
+                items:
+                  type: object
+        expires_at:
+          type: string
+          format: date-time
+    CreateTaxTransactionRequest:
+      type: object
+      required:
+        - calculation
+        - reference
+      properties:
+        calculation:
+          type: string
+          description: Tax calculation ID
+        reference:
+          type: string
+          description: Merchant order reference
+    TaxTransaction:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: tax_transaction
+        type:
+          type: string
+          enum:
+            - transaction
+            - reversal
+        reference:
+          type: string
+        reversal:
+          type: object
+        line_items:
+          type: array
+          items:
+            type: object
+        created_at:
+          type: string
+          format: date-time
+    ThreeDSAuthRequest:
+      type: object
+      required:
+        - payment_method
+        - amount
+        - currency
+        - return_url
+      properties:
+        payment_method:
+          type: string
+        amount:
+          type: integer
+        currency:
+          type: string
+        return_url:
+          type: string
+          format: uri
+        request_three_d_secure:
+          type: string
+          enum:
+            - automatic
+            - any
+            - challenge
+          default: automatic
+        customer_id:
+          type: string
+    ThreeDSAuth:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: three_d_secure
+        status:
+          type: string
+          enum:
+            - processing
+            - succeeded
+            - failed
+            - not_supported
+        result:
+          type: string
+          enum:
+            - authenticated
+            - attempt_acknowledged
+            - exempted
+            - failed
+            - not_enrolled
+            - not_supported
+        eci:
+          type: string
+          description: Electronic Commerce Indicator
+        authentication_value:
+          type: string
+          description: CAVV / AAV
+        transaction_id:
+          type: string
+        version:
+          type: string
+          enum:
+            - "1.0"
+            - "2.0"
+            - "2.1"
+            - "2.2"
+        next_action:
+          $ref: "#/components/schemas/NextAction"
+        created_at:
+          type: string
+          format: date-time
+    CreateMandateRequest:
+      type: object
+      required:
+        - customer_id
+        - payment_method_id
+        - type
+      properties:
+        customer_id:
+          type: string
+        payment_method_id:
+          type: string
+        type:
+          type: string
+          enum:
+            - single_use
+            - multi_use
+        payment_method_options:
+          type: object
+          properties:
+            sepa_debit:
+              type: object
+            ach_debit:
+              type: object
+        customer_acceptance:
+          type: object
+          required:
+            - type
+            - accepted_at
+          properties:
+            type:
+              type: string
+              enum:
+                - online
+                - offline
+            accepted_at:
+              type: string
+              format: date-time
+            online:
+              type: object
+              properties:
+                ip_address:
+                  type: string
+                user_agent:
+                  type: string
+    Mandate:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: mandate
+        customer_id:
+          type: string
+        payment_method_id:
+          type: string
+        type:
+          type: string
+          enum:
+            - single_use
+            - multi_use
+        status:
+          type: string
+          enum:
+            - pending
+            - active
+            - inactive
+            - expired
+        single_use:
+          type: object
+          properties:
+            amount:
+              type: integer
+            currency:
+              type: string
+        customer_acceptance:
+          type: object
+        payment_method_details:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+    MandateList:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Mandate"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+    ExchangeRates:
+      type: object
+      properties:
+        base_currency:
+          type: string
+        rates:
+          type: object
+          additionalProperties:
+            type: number
+        timestamp:
+          type: string
+          format: date-time
+    CurrencyConvertRequest:
+      type: object
+      required:
+        - amount
+        - from_currency
+        - to_currency
+      properties:
+        amount:
+          type: integer
+          minimum: 1
+        from_currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+        to_currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+    CurrencyConvertResult:
+      type: object
+      properties:
+        from_amount:
+          type: integer
+        from_currency:
+          type: string
+        to_amount:
+          type: integer
+        to_currency:
+          type: string
+        exchange_rate:
+          type: number
+        timestamp:
+          type: string
+          format: date-time
+    NotificationPreferences:
+      type: object
+      properties:
+        email:
+          type: object
+          properties:
+            payment_receipt:
+              type: boolean
+            refund_confirmation:
+              type: boolean
+            dispute_notification:
+              type: boolean
+            payout_notification:
+              type: boolean
+        sms:
+          type: object
+          properties:
+            payment_receipt:
+              type: boolean
+        webhook_events:
+          type: array
+          items:
+            type: string
+        marketing_opt_in:
+          type: boolean
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - healthy
+            - degraded
+            - down
+        version:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+    ServiceStatus:
+      type: object
+      properties:
+        overall:
+          type: string
+          enum:
+            - operational
+            - degraded
+            - major_outage
+        components:
+          type: object
+          properties:
+            payment_processing:
+              type: string
+              enum:
+                - operational
+                - degraded
+                - outage
+            refunds:
+              type: string
+              enum:
+                - operational
+                - degraded
+                - outage
+            payouts:
+              type: string
+              enum:
+                - operational
+                - degraded
+                - outage
+            webhooks:
+              type: string
+              enum:
+                - operational
+                - degraded
+                - outage
+            fraud_detection:
+              type: string
+              enum:
+                - operational
+                - degraded
+                - outage
+            reporting:
+              type: string
+              enum:
+                - operational
+                - degraded
+                - outage
+        last_updated:
+          type: string
+          format: date-time
+    ApiErrorResponse:
+      type: object
+      required:
+        - success
+        - errorCode
+        - message
+        - timestamp
+      properties:
+        success:
+          type: boolean
+          example: false
+        errorCode:
+          type: string
+          description: Machine-readable error code
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          description: Human-readable error summary
+          example: Invalid request parameters
+        details:
+          type: object
+          description: "Additional error context (decline codes, field errors, etc.)"
+          properties:
+            decline_code:
+              type: string
+              description: Acquirer decline code (for payment failures)
+            param:
+              type: string
+              description: Request field that caused the error
+            payment_intent:
+              type: object
+              description: Payment object on payment failure
+            doc_url:
+              type: string
+              format: uri
+              description: Link to documentation for this error
+        validationErrors:
+          type: array
+          description: Field-level validation errors
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp of when the error occurred
+        path:
+          type: string
+          description: Request path that caused the error
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+          example:
+            success: false
+            errorCode: INVALID_REQUEST
+            message: Invalid request parameters
+            timestamp: "2026-06-25T10:00:00Z"
+            path: /v1/payments
+    Unauthorized:
+      description: Authentication failed or missing
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+          example:
+            success: false
+            errorCode: UNAUTHORIZED
+            message: Authentication required
+            timestamp: "2026-06-25T10:00:00Z"
+            path: /v1/payments
+    Forbidden:
+      description: Insufficient permissions for this operation
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+          example:
+            success: false
+            errorCode: FORBIDDEN
+            message: You do not have permission to perform this action
+            timestamp: "2026-06-25T10:00:00Z"
+            path: /v1/payments
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+          example:
+            success: false
+            errorCode: NOT_FOUND
+            message: The requested resource was not found
+            timestamp: "2026-06-25T10:00:00Z"
+            path: /v1/payments/pay_unknown
+    Conflict:
+      description: "Request conflicts with current state (e.g., duplicate idempotency key with different payload)"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+          example:
+            success: false
+            errorCode: CONFLICT
+            message: A resource with this identifier already exists
+            timestamp: "2026-06-25T10:00:00Z"
+            path: /v1/payments
+    PaymentRequired:
+      description: Payment declined by the issuer or payment processor
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+          example:
+            success: false
+            errorCode: PAYMENT_DECLINED
+            message: Your card was declined
+            details:
+              decline_code: insufficient_funds
+            timestamp: "2026-06-25T10:00:00Z"
+            path: /v1/payments
+    UnprocessableEntity:
+      description: Business rule violation or semantic validation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+          example:
+            success: false
+            errorCode: VALIDATION_ERROR
+            message: Request validation failed
+            validationErrors:
+              - field: amount
+                message: Amount must be greater than 0
+            timestamp: "2026-06-25T10:00:00Z"
+            path: /v1/payments
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds until rate limit resets
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+          description: Maximum requests per window
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+          description: Remaining requests in current window
+        X-RateLimit-Reset:
+          schema:
+            type: string
+            format: date-time
+          description: Timestamp when the rate limit window resets
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+          example:
+            success: false
+            errorCode: RATE_LIMIT_EXCEEDED
+            message: Too many requests. Please retry after the indicated period.
+            timestamp: "2026-06-25T10:00:00Z"
+            path: /v1/payments
+    InternalServerError:
+      description: Unexpected internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+          example:
+            success: false
+            errorCode: INTERNAL_SERVER_ERROR
+            message: An unexpected error occurred. Please try again later.
+            timestamp: "2026-06-25T10:00:00Z"
+            path: /v1/payments

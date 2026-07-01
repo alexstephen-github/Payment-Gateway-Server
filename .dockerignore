@@ -1,0 +1,22 @@
+# Build output — rebuilt inside the image
+target/
+
+# IDE / editor files
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# Git
+.git/
+.gitignore
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Docs & manifests not needed inside the image
+*.md
+openshift/
