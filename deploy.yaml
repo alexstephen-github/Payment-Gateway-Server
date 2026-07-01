@@ -1,16 +1,19 @@
-# Standard Kubernetes manifest fetched by the "kubernetes-deploy" component
-# from the repo root (/deploy.yaml). Deployment + Service + Ingress.
+# Kubernetes/OpenShift manifest fetched by the deploy component from the repo
+# root (/deploy.yaml). Deployment + Service + Route.
 #
-# NOTE: set `image` below to the fully-qualified image your build pushes,
-# e.g. ghcr.io/alexstephen-github/payment-gateway-mock:latest
+# The image name below is the bare ImageStreamTag produced by the build
+# (payment-gateway-mock:latest); OpenShift resolves it from the ImageStream in
+# the same namespace.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: payment-gateway-mock
   labels:
     app: payment-gateway-mock
+    app.kubernetes.io/name: payment-gateway-mock
+    app.kubernetes.io/component: backend
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: payment-gateway-mock
@@ -21,44 +24,34 @@ spec:
     spec:
       containers:
         - name: payment-gateway-mock
-          image: REPLACE_WITH_YOUR_IMAGE:latest
+          image: payment-gateway-mock:latest
           ports:
-            - name: http
-              containerPort: 8080
+            - containerPort: 8080
+              protocol: TCP
           env:
             - name: SERVER_PORT
               value: "8080"
             - name: JAVA_OPTS
               value: "-XX:MaxRAMPercentage=75.0 -XX:+UseContainerSupport"
+          resources:
+            requests:
+              memory: "384Mi"
+              cpu: "200m"
+            limits:
+              memory: "768Mi"
+              cpu: "500m"
           readinessProbe:
             httpGet:
               path: /v1/actuator/health/readiness
               port: 8080
             initialDelaySeconds: 15
             periodSeconds: 10
-            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /v1/actuator/health/liveness
               port: 8080
             initialDelaySeconds: 30
             periodSeconds: 15
-            failureThreshold: 3
-          resources:
-            requests:
-              cpu: 100m
-              memory: 384Mi
-            limits:
-              cpu: "1"
-              memory: 768Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            runAsNonRoot: true
-            capabilities:
-              drop:
-                - ALL
-            seccompProfile:
-              type: RuntimeDefault
 ---
 apiVersion: v1
 kind: Service
@@ -70,24 +63,24 @@ spec:
   selector:
     app: payment-gateway-mock
   ports:
-    - name: http
-      port: 8080
+    - port: 8080
       targetPort: 8080
+      protocol: TCP
+  type: ClusterIP
 ---
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+apiVersion: route.openshift.io/v1
+kind: Route
 metadata:
   name: payment-gateway-mock
   labels:
     app: payment-gateway-mock
 spec:
-  rules:
-    - http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: payment-gateway-mock
-                port:
-                  number: 8080
+  to:
+    kind: Service
+    name: payment-gateway-mock
+    weight: 100
+  port:
+    targetPort: 8080
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
