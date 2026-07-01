@@ -1,0 +1,93 @@
+# Standard Kubernetes manifest fetched by the "kubernetes-deploy" component
+# from the repo root (/deploy.yaml). Deployment + Service + Ingress.
+#
+# NOTE: set `image` below to the fully-qualified image your build pushes,
+# e.g. ghcr.io/alexstephen-github/payment-gateway-mock:latest
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-gateway-mock
+  labels:
+    app: payment-gateway-mock
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payment-gateway-mock
+  template:
+    metadata:
+      labels:
+        app: payment-gateway-mock
+    spec:
+      containers:
+        - name: payment-gateway-mock
+          image: REPLACE_WITH_YOUR_IMAGE:latest
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SERVER_PORT
+              value: "8080"
+            - name: JAVA_OPTS
+              value: "-XX:MaxRAMPercentage=75.0 -XX:+UseContainerSupport"
+          readinessProbe:
+            httpGet:
+              path: /v1/actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /v1/actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-gateway-mock
+  labels:
+    app: payment-gateway-mock
+spec:
+  selector:
+    app: payment-gateway-mock
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: payment-gateway-mock
+  labels:
+    app: payment-gateway-mock
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: payment-gateway-mock
+                port:
+                  number: 8080
