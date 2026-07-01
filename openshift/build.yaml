@@ -2,7 +2,7 @@
 # Dockerfile using its own Docker/Buildah build strategy.
 #
 #   oc apply -f openshift/build.yaml
-#   oc start-build payment-gateway-mock --from-dir=. --follow
+#   oc start-build payment-gateway-mock --follow
 #
 apiVersion: image.openshift.io/v1
 kind: ImageStream
@@ -18,16 +18,14 @@ metadata:
   labels:
     app: payment-gateway-mock
 spec:
-  # Binary source: the build is fed from a local directory via `--from-dir`.
-  # To build straight from Git instead, replace `source` with:
-  #   source:
-  #     type: Git
-  #     git:
-  #       uri: https://github.com/<org>/<repo>.git
-  #       ref: main
+  # Git source: OpenShift clones the repo and builds from it directly.
+  # The Dockerfile lives at the repo root, so no contextDir is set (the build
+  # context is the repository root). dockerfilePath is relative to that root.
   source:
-    type: Binary
-    binary: {}
+    type: Git
+    git:
+      uri: https://github.com/alexstephen-github/Payment-Gateway-Server.git
+      ref: main
   strategy:
     type: Docker
     dockerStrategy:
