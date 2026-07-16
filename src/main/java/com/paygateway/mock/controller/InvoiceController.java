@@ -25,7 +25,7 @@ public class InvoiceController {
     @PostMapping
     public ResponseEntity<Invoice> create(@RequestBody(required = false) String raw) {
         Invoice invoice = factory.invoice(Req.asMap(raw), "draft");
-        return ResponseEntity.created(URI.create("/v1/invoices/" + invoice.id)).body(invoice);
+        return ResponseEntity.created(URI.create("/invoices/" + invoice.id)).body(invoice);
     }
 
     @GetMapping

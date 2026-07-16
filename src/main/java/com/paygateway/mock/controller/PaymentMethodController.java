@@ -26,7 +26,7 @@ public class PaymentMethodController {
     @PostMapping("/payment-methods/tokenize")
     public ResponseEntity<PaymentMethod> tokenize(@RequestBody(required = false) String raw) {
         PaymentMethod pm = factory.paymentMethod(Req.str(Req.asMap(raw), "type"), null);
-        return ResponseEntity.created(URI.create("/v1/payment-methods/" + pm.id)).body(pm);
+        return ResponseEntity.created(URI.create("/payment-methods/" + pm.id)).body(pm);
     }
 
     @PostMapping("/payment-methods/validate")

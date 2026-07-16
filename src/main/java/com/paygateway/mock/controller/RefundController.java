@@ -22,7 +22,7 @@ public class RefundController {
     public ResponseEntity<Refund> create(@PathVariable String paymentId,
                                          @RequestBody(required = false) String raw) {
         Refund refund = factory.refund(paymentId, Req.asMap(raw));
-        return ResponseEntity.created(URI.create("/v1/refunds/" + refund.id)).body(refund);
+        return ResponseEntity.created(URI.create("/refunds/" + refund.id)).body(refund);
     }
 
     @GetMapping("/payments/{paymentId}/refunds")

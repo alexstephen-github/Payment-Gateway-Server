@@ -65,7 +65,7 @@ public class MockFactory {
         ListMeta m = new ListMeta();
         m.hasMore = Rand.bool();
         m.totalCount = count + Rand.intRange(0, 100);
-        m.url = "/v1/list";
+        m.url = "/list";
         return m;
     }
 
@@ -153,7 +153,7 @@ public class MockFactory {
         ListMeta m = new ListMeta();
         m.hasMore = false;
         m.totalCount = 0;
-        m.url = "/v1/refunds";
+        m.url = "/refunds";
         list.meta = m;
         return list;
     }

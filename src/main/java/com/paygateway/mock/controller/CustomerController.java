@@ -25,7 +25,7 @@ public class CustomerController {
     @PostMapping
     public ResponseEntity<Customer> create(@RequestBody(required = false) String raw) {
         Customer customer = factory.customer(Req.asMap(raw));
-        return ResponseEntity.created(URI.create("/v1/customers/" + customer.id)).body(customer);
+        return ResponseEntity.created(URI.create("/customers/" + customer.id)).body(customer);
     }
 
     @GetMapping

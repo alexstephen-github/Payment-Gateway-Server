@@ -27,7 +27,7 @@ public class PaymentController {
         if (body != null && Boolean.TRUE.equals(body.get("confirm"))) {
             payment.status = "succeeded";
         }
-        return ResponseEntity.created(URI.create("/v1/payments/" + payment.id)).body(payment);
+        return ResponseEntity.created(URI.create("/payments/" + payment.id)).body(payment);
     }
 
     @GetMapping
