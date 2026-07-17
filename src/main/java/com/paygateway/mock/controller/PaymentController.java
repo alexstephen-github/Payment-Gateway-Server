@@ -1,5 +1,6 @@
 package com.paygateway.mock.controller;
 
+import com.paygateway.mock.dto.*;
 import com.paygateway.mock.model.Payment;
 import com.paygateway.mock.model.PaymentList;
 import com.paygateway.mock.support.MockFactory;
@@ -21,7 +22,8 @@ public class PaymentController {
     }
 
     @PostMapping(consumes = "application/json")
-    public ResponseEntity<Payment> create(@RequestBody(required = false) Map<String, Object> body) {
+    public ResponseEntity<Payment> create(@RequestBody(required = false) CreatePaymentRequest request) {
+        Map<String, Object> body = request != null ? request.toMap() : null;
         Payment payment = factory.payment(body);
         if (body != null && Boolean.TRUE.equals(body.get("confirm"))) {
             payment.status = "succeeded";
@@ -49,7 +51,8 @@ public class PaymentController {
 
     @PostMapping(value = "/{paymentId}/capture", consumes = "application/json")
     public Payment capture(@PathVariable String paymentId,
-                           @RequestBody(required = false) Map<String, Object> body) {
+                           @RequestBody(required = false) CapturePaymentRequest request) {
+        Map<String, Object> body = request != null ? request.toMap() : null;
         Payment payment = factory.payment(null);
         payment.id = paymentId;
         Integer toCapture = Req.integer(body, "amount_to_capture");
@@ -64,19 +67,19 @@ public class PaymentController {
 
     @PostMapping(value = "/{paymentId}/void", consumes = "application/json")
     public Payment voidPayment(@PathVariable String paymentId,
-                               @RequestBody(required = false) Map<String, Object> body) {
+                               @RequestBody(required = false) VoidPaymentRequest request) {
         return terminal(paymentId, "cancelled");
     }
 
     @PostMapping(value = "/{paymentId}/cancel", consumes = "application/json")
     public Payment cancel(@PathVariable String paymentId,
-                          @RequestBody(required = false) Map<String, Object> body) {
+                          @RequestBody(required = false) CancelPaymentRequest request) {
         return terminal(paymentId, "cancelled");
     }
 
     @PostMapping(value = "/{paymentId}/confirm", consumes = "application/json")
     public Payment confirm(@PathVariable String paymentId,
-                           @RequestBody(required = false) Map<String, Object> body) {
+                           @RequestBody(required = false) ConfirmPaymentRequest request) {
         Payment payment = factory.payment(null);
         payment.id = paymentId;
         payment.status = "succeeded";

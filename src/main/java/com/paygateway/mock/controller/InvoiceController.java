@@ -1,5 +1,8 @@
 package com.paygateway.mock.controller;
 
+import com.paygateway.mock.dto.CreateInvoiceRequest;
+import com.paygateway.mock.dto.PayInvoiceRequest;
+import com.paygateway.mock.dto.UpdateInvoiceRequest;
 import com.paygateway.mock.model.Invoice;
 import com.paygateway.mock.model.InvoiceList;
 import com.paygateway.mock.support.MockFactory;
@@ -22,7 +25,8 @@ public class InvoiceController {
     }
 
     @PostMapping(consumes = "application/json")
-    public ResponseEntity<Invoice> create(@RequestBody(required = false) Map<String, Object> body) {
+    public ResponseEntity<Invoice> create(@RequestBody(required = false) CreateInvoiceRequest request) {
+        Map<String, Object> body = request != null ? request.toMap() : null;
         Invoice invoice = factory.invoice(body, "draft");
         return ResponseEntity.created(URI.create("/payments/invoices/" + invoice.id)).body(invoice);
     }
@@ -45,7 +49,8 @@ public class InvoiceController {
 
     @PutMapping(value = "/{invoiceId}", consumes = "application/json")
     public Invoice update(@PathVariable String invoiceId,
-                          @RequestBody(required = false) Map<String, Object> body) {
+                          @RequestBody(required = false) UpdateInvoiceRequest request) {
+        Map<String, Object> body = request != null ? request.toMap() : null;
         return withId(factory.invoice(body, "draft"), invoiceId);
     }
 
@@ -61,7 +66,7 @@ public class InvoiceController {
 
     @PostMapping(value = "/{invoiceId}/pay", consumes = "application/json")
     public Invoice pay(@PathVariable String invoiceId,
-                       @RequestBody(required = false) Map<String, Object> body) {
+                       @RequestBody(required = false) PayInvoiceRequest request) {
         return withId(factory.invoice(null, "paid"), invoiceId);
     }
 

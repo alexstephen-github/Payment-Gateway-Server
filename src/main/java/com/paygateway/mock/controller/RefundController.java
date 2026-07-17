@@ -1,5 +1,6 @@
 package com.paygateway.mock.controller;
 
+import com.paygateway.mock.dto.CreateRefundRequest;
 import com.paygateway.mock.model.Refund;
 import com.paygateway.mock.model.RefundList;
 import com.paygateway.mock.support.MockFactory;
@@ -20,7 +21,8 @@ public class RefundController {
 
     @PostMapping(value = "/payments/payments/{paymentId}/refunds", consumes = "application/json")
     public ResponseEntity<Refund> create(@PathVariable String paymentId,
-                                         @RequestBody(required = false) Map<String, Object> body) {
+                                         @RequestBody(required = false) CreateRefundRequest request) {
+        Map<String, Object> body = request != null ? request.toMap() : null;
         Refund refund = factory.refund(paymentId, body);
         return ResponseEntity.created(URI.create("/payments/refunds/" + refund.id)).body(refund);
     }

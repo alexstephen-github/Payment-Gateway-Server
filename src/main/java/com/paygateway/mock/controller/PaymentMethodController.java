@@ -1,5 +1,9 @@
 package com.paygateway.mock.controller;
 
+import com.paygateway.mock.dto.AttachPaymentMethodRequest;
+import com.paygateway.mock.dto.TokenizePaymentMethodRequest;
+import com.paygateway.mock.dto.UpdatePaymentMethodRequest;
+import com.paygateway.mock.dto.ValidatePaymentMethodRequest;
 import com.paygateway.mock.model.Customer;
 import com.paygateway.mock.model.PaymentMethod;
 import com.paygateway.mock.model.PaymentMethodList;
@@ -10,7 +14,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
-import java.util.Map;
 
 @RestController
 public class PaymentMethodController {
@@ -24,14 +27,16 @@ public class PaymentMethodController {
     /* ---- Standalone tokenization / validation ---- */
 
     @PostMapping(value = "/payments/payment-methods/tokenize", consumes = "application/json")
-    public ResponseEntity<PaymentMethod> tokenize(@RequestBody(required = false) Map<String, Object> body) {
-        String type = body != null ? (String) body.get("type") : null;
+    public ResponseEntity<PaymentMethod> tokenize(
+            @RequestBody(required = false) TokenizePaymentMethodRequest request) {
+        String type = request != null ? request.type : null;
         PaymentMethod pm = factory.paymentMethod(type, null);
         return ResponseEntity.created(URI.create("/payments/payment-methods/" + pm.id)).body(pm);
     }
 
     @PostMapping(value = "/payments/payment-methods/validate", consumes = "application/json")
-    public PaymentMethodValidationResult validate(@RequestBody(required = false) Map<String, Object> body) {
+    public PaymentMethodValidationResult validate(
+            @RequestBody(required = false) ValidatePaymentMethodRequest request) {
         return factory.validation();
     }
 
@@ -39,10 +44,10 @@ public class PaymentMethodController {
 
     @PostMapping(value = "/payments/customers/{customerId}/payment-methods", consumes = "application/json")
     public PaymentMethod attach(@PathVariable String customerId,
-                                @RequestBody(required = false) Map<String, Object> body) {
+                                @RequestBody(required = false) AttachPaymentMethodRequest request) {
         PaymentMethod pm = factory.paymentMethod(null, customerId);
-        if (body != null && body.get("payment_method_id") != null) {
-            pm.id = (String) body.get("payment_method_id");
+        if (request != null && request.paymentMethodId != null) {
+            pm.id = request.paymentMethodId;
         }
         return pm;
     }
@@ -62,7 +67,7 @@ public class PaymentMethodController {
 
     @PutMapping(value = "/payments/customers/{customerId}/payment-methods/{methodId}", consumes = "application/json")
     public PaymentMethod update(@PathVariable String customerId, @PathVariable String methodId,
-                                @RequestBody(required = false) Map<String, Object> body) {
+                                @RequestBody(required = false) UpdatePaymentMethodRequest request) {
         PaymentMethod pm = factory.paymentMethod(null, customerId);
         pm.id = methodId;
         return pm;

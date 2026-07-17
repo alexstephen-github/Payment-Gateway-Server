@@ -1,5 +1,7 @@
 package com.paygateway.mock.controller;
 
+import com.paygateway.mock.dto.CreateCustomerRequest;
+import com.paygateway.mock.dto.UpdateCustomerRequest;
 import com.paygateway.mock.model.Customer;
 import com.paygateway.mock.model.CustomerList;
 import com.paygateway.mock.support.MockFactory;
@@ -22,7 +24,8 @@ public class CustomerController {
     }
 
     @PostMapping(consumes = "application/json")
-    public ResponseEntity<Customer> create(@RequestBody(required = false) Map<String, Object> body) {
+    public ResponseEntity<Customer> create(@RequestBody(required = false) CreateCustomerRequest request) {
+        Map<String, Object> body = request != null ? request.toMap() : null;
         Customer customer = factory.customer(body);
         return ResponseEntity.created(URI.create("/payments/customers/" + customer.id)).body(customer);
     }
@@ -46,7 +49,8 @@ public class CustomerController {
 
     @PutMapping(value = "/{customerId}", consumes = "application/json")
     public Customer update(@PathVariable String customerId,
-                           @RequestBody(required = false) Map<String, Object> body) {
+                           @RequestBody(required = false) UpdateCustomerRequest request) {
+        Map<String, Object> body = request != null ? request.toMap() : null;
         Customer customer = factory.customer(body);
         customer.id = customerId;
         return customer;
