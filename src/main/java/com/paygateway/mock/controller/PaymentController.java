@@ -11,7 +11,7 @@ import java.net.URI;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/payments")
+@RequestMapping("/payments/payments")
 public class PaymentController {
 
     private final MockFactory factory;
@@ -20,14 +20,13 @@ public class PaymentController {
         this.factory = factory;
     }
 
-    @PostMapping
-    public ResponseEntity<Payment> create(@RequestBody(required = false) String raw) {
-        Map<String, Object> body = Req.asMap(raw);
+    @PostMapping(consumes = "application/json")
+    public ResponseEntity<Payment> create(@RequestBody(required = false) Map<String, Object> body) {
         Payment payment = factory.payment(body);
         if (body != null && Boolean.TRUE.equals(body.get("confirm"))) {
             payment.status = "succeeded";
         }
-        return ResponseEntity.created(URI.create("/payments/" + payment.id)).body(payment);
+        return ResponseEntity.created(URI.create("/payments/payments/" + payment.id)).body(payment);
     }
 
     @GetMapping
@@ -48,10 +47,9 @@ public class PaymentController {
         return payment;
     }
 
-    @PostMapping("/{paymentId}/capture")
+    @PostMapping(value = "/{paymentId}/capture", consumes = "application/json")
     public Payment capture(@PathVariable String paymentId,
-                           @RequestBody(required = false) String raw) {
-        Map<String, Object> body = Req.asMap(raw);
+                           @RequestBody(required = false) Map<String, Object> body) {
         Payment payment = factory.payment(null);
         payment.id = paymentId;
         Integer toCapture = Req.integer(body, "amount_to_capture");
@@ -64,21 +62,21 @@ public class PaymentController {
         return payment;
     }
 
-    @PostMapping("/{paymentId}/void")
+    @PostMapping(value = "/{paymentId}/void", consumes = "application/json")
     public Payment voidPayment(@PathVariable String paymentId,
-                               @RequestBody(required = false) String raw) {
+                               @RequestBody(required = false) Map<String, Object> body) {
         return terminal(paymentId, "cancelled");
     }
 
-    @PostMapping("/{paymentId}/cancel")
+    @PostMapping(value = "/{paymentId}/cancel", consumes = "application/json")
     public Payment cancel(@PathVariable String paymentId,
-                          @RequestBody(required = false) String raw) {
+                          @RequestBody(required = false) Map<String, Object> body) {
         return terminal(paymentId, "cancelled");
     }
 
-    @PostMapping("/{paymentId}/confirm")
+    @PostMapping(value = "/{paymentId}/confirm", consumes = "application/json")
     public Payment confirm(@PathVariable String paymentId,
-                           @RequestBody(required = false) String raw) {
+                           @RequestBody(required = false) Map<String, Object> body) {
         Payment payment = factory.payment(null);
         payment.id = paymentId;
         payment.status = "succeeded";

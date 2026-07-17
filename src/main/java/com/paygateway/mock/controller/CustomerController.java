@@ -3,7 +3,6 @@ package com.paygateway.mock.controller;
 import com.paygateway.mock.model.Customer;
 import com.paygateway.mock.model.CustomerList;
 import com.paygateway.mock.support.MockFactory;
-import com.paygateway.mock.support.Req;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -13,7 +12,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/customers")
+@RequestMapping("/payments/customers")
 public class CustomerController {
 
     private final MockFactory factory;
@@ -22,10 +21,10 @@ public class CustomerController {
         this.factory = factory;
     }
 
-    @PostMapping
-    public ResponseEntity<Customer> create(@RequestBody(required = false) String raw) {
-        Customer customer = factory.customer(Req.asMap(raw));
-        return ResponseEntity.created(URI.create("/customers/" + customer.id)).body(customer);
+    @PostMapping(consumes = "application/json")
+    public ResponseEntity<Customer> create(@RequestBody(required = false) Map<String, Object> body) {
+        Customer customer = factory.customer(body);
+        return ResponseEntity.created(URI.create("/payments/customers/" + customer.id)).body(customer);
     }
 
     @GetMapping
@@ -45,10 +44,10 @@ public class CustomerController {
         return customer;
     }
 
-    @PutMapping("/{customerId}")
+    @PutMapping(value = "/{customerId}", consumes = "application/json")
     public Customer update(@PathVariable String customerId,
-                           @RequestBody(required = false) String raw) {
-        Customer customer = factory.customer(Req.asMap(raw));
+                           @RequestBody(required = false) Map<String, Object> body) {
+        Customer customer = factory.customer(body);
         customer.id = customerId;
         return customer;
     }

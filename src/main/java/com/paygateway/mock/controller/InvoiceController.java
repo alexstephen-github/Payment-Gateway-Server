@@ -3,7 +3,6 @@ package com.paygateway.mock.controller;
 import com.paygateway.mock.model.Invoice;
 import com.paygateway.mock.model.InvoiceList;
 import com.paygateway.mock.support.MockFactory;
-import com.paygateway.mock.support.Req;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -13,7 +12,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/invoices")
+@RequestMapping("/payments/invoices")
 public class InvoiceController {
 
     private final MockFactory factory;
@@ -22,10 +21,10 @@ public class InvoiceController {
         this.factory = factory;
     }
 
-    @PostMapping
-    public ResponseEntity<Invoice> create(@RequestBody(required = false) String raw) {
-        Invoice invoice = factory.invoice(Req.asMap(raw), "draft");
-        return ResponseEntity.created(URI.create("/invoices/" + invoice.id)).body(invoice);
+    @PostMapping(consumes = "application/json")
+    public ResponseEntity<Invoice> create(@RequestBody(required = false) Map<String, Object> body) {
+        Invoice invoice = factory.invoice(body, "draft");
+        return ResponseEntity.created(URI.create("/payments/invoices/" + invoice.id)).body(invoice);
     }
 
     @GetMapping
@@ -44,10 +43,10 @@ public class InvoiceController {
         return withId(factory.invoice(null, "open"), invoiceId);
     }
 
-    @PutMapping("/{invoiceId}")
+    @PutMapping(value = "/{invoiceId}", consumes = "application/json")
     public Invoice update(@PathVariable String invoiceId,
-                          @RequestBody(required = false) String raw) {
-        return withId(factory.invoice(Req.asMap(raw), "draft"), invoiceId);
+                          @RequestBody(required = false) Map<String, Object> body) {
+        return withId(factory.invoice(body, "draft"), invoiceId);
     }
 
     @DeleteMapping("/{invoiceId}")
@@ -60,9 +59,9 @@ public class InvoiceController {
         return withId(factory.invoice(null, "open"), invoiceId);
     }
 
-    @PostMapping("/{invoiceId}/pay")
+    @PostMapping(value = "/{invoiceId}/pay", consumes = "application/json")
     public Invoice pay(@PathVariable String invoiceId,
-                       @RequestBody(required = false) String raw) {
+                       @RequestBody(required = false) Map<String, Object> body) {
         return withId(factory.invoice(null, "paid"), invoiceId);
     }
 
